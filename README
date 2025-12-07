@@ -1,0 +1,6 @@
+# Bondage
+
+bondage is a small crate to bind rust native binaries to NodeJS/Deno build on Neon.
+it provides a set of macros and a primitive event system.
+
+To generate the TS module the TS_DECL_GEN env variable must be set
