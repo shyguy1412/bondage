@@ -1,89 +1,87 @@
-use core::f64;
-use std::{cell::OnceCell, sync::Mutex};
-
 pub use bondage_macros::*;
-pub use neon::prelude::*;
+use neon::prelude::*;
 
-#[linkme::distributed_slice]
-pub static JS_EXPORTS: [(&str, fn(FunctionContext) -> JsResult<JsValue>)];
+// #[linkme::distributed_slice]
+// pub static JS_EXPORTS: [(&str, fn(FunctionContext) -> JsResult<JsValue>)];
 
-
-pub trait Transferable {
+pub trait Transferable:
+    Sendable<JsForm = <Self as Transferable>::JsForm>
+    + Receivable<JsForm = <Self as Transferable>::JsForm>
+{
     type JsForm: Value;
-    fn to_js<'cx>(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, Self::JsForm>;
+}
+
+impl<JS: Value, T: Receivable<JsForm = JS> + Sendable<JsForm = JS>> Transferable for T {
+    type JsForm = JS;
+}
+
+pub trait Receivable {
+    type JsForm: Value;
     fn from_js<'cx>(ctx: &mut Cx<'cx>, object: Handle<'cx, Self::JsForm>) -> NeonResult<Self>
     where
         Self: Sized;
 }
 
-pub trait Sendable<'cx> {
+pub trait Sendable {
     type JsForm: Value;
-    fn to_js(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, Self::JsForm>;
+    fn to_js<'cx>(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, Self::JsForm>;
 }
 
-impl<'cx, T: Transferable> Sendable<'cx> for T {
-    type JsForm = T::JsForm;
+impl<V: Value> Sendable for Handle<'_, V> {
+    type JsForm = JsValue;
 
-    fn to_js(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, Self::JsForm> {
-        self.to_js(ctx)
-    }
-}
-
-impl<'cx, V: Value> Sendable<'cx> for Handle<'cx, V> {
-    type JsForm = V;
-
-    fn to_js(&self, _: &mut Cx<'cx>) -> Handle<'cx, Self::JsForm> {
-        *self
+    fn to_js<'cx>(&self, cx: &mut Cx<'cx>) -> Handle<'cx, Self::JsForm> {
+        self.as_value(cx)
     }
 }
 
-impl Transferable for String {
-    type JsForm = JsString;
-    fn to_js<'cx>(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, JsString> {
-        ctx.string(self)
-    }
-
-    fn from_js<'cx>(ctx: &mut Cx<'cx>, object: Handle<'cx, JsString>) -> NeonResult<Self> {
-        Ok(object.value(ctx))
-    }
+macro_rules! primitive {
+    ($($js:ident into $rust:ty)*) => ($(
+        impl Receivable for $rust {
+            type JsForm = $js;
+            fn from_js<'cx>(ctx: &mut Cx<'cx>, object: Handle<'cx, $js>) -> NeonResult<Self> {
+                Ok(object.value(ctx))
+            }
+        }
+    )*);
+    ($($js:ident from $rust:ty)*) => ($(
+        impl Sendable for $rust {
+            type JsForm = $js;
+            fn to_js<'cx>(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, $js> {
+                $js::new(ctx, self.to_owned())
+            }
+        }
+    )*);
+    ($($js:ident via $rust:ty)*) => ($(
+        primitive!($js into $rust);
+        primitive!($js from $rust);
+    )*);
 }
 
-impl<'cx> Sendable<'cx> for &str {
-    type JsForm = JsString;
-
-    fn to_js(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, Self::JsForm> {
-        ctx.string(self)
-    }
+primitive! {
+    JsString via String
+    JsNumber via f64
+    JsBoolean via bool
 }
 
-impl Transferable for f64 {
-    type JsForm = JsNumber;
-    fn to_js<'cx>(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, JsNumber> {
-        ctx.number(*self)
-    }
-
-    fn from_js<'cx>(ctx: &mut Cx<'cx>, object: Handle<'cx, JsNumber>) -> NeonResult<Self> {
-        Ok(object.value(ctx))
-    }
+primitive! {
+    JsString from &str
+    JsNumber from f32
+    JsNumber from u8
+    JsNumber from u16
+    JsNumber from u32
 }
 
-impl Transferable for bool {
-    type JsForm = JsBoolean;
-    fn to_js<'cx>(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, JsBoolean> {
-        ctx.boolean(*self)
-    }
-
-    fn from_js<'cx>(ctx: &mut Cx<'cx>, object: Handle<'cx, JsBoolean>) -> NeonResult<Self> {
-        Ok(object.value(ctx))
-    }
-}
-
-impl Transferable for () {
+impl Sendable for () {
     type JsForm = JsUndefined;
 
     fn to_js<'cx>(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, Self::JsForm> {
         ctx.undefined()
     }
+}
+
+impl Receivable for () {
+    type JsForm = JsUndefined;
 
     fn from_js<'cx>(_: &mut Cx<'cx>, _: Handle<'cx, Self::JsForm>) -> NeonResult<Self>
     where
@@ -93,9 +91,9 @@ impl Transferable for () {
     }
 }
 
-impl<T> Transferable for Vec<T>
+impl<T> Sendable for Vec<T>
 where
-    T: Transferable,
+    T: Sendable,
 {
     type JsForm = JsArray;
     fn to_js<'cx>(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, JsArray> {
@@ -108,7 +106,13 @@ where
 
         arr
     }
+}
 
+impl<T> Receivable for Vec<T>
+where
+    T: Receivable,
+{
+    type JsForm = JsArray;
     fn from_js<'cx>(ctx: &mut Cx<'cx>, array: Handle<'cx, JsArray>) -> NeonResult<Self> {
         let vec = array.to_vec(ctx)?;
 
@@ -125,9 +129,9 @@ where
     }
 }
 
-impl<T> Transferable for Option<T>
+impl<T> Sendable for Option<T>
 where
-    T: Transferable,
+    T: Sendable,
 {
     type JsForm = JsValue;
     fn to_js<'cx>(&self, ctx: &mut Cx<'cx>) -> Handle<'cx, JsValue> {
@@ -136,77 +140,24 @@ where
             None => ctx.undefined().upcast::<JsValue>(),
         }
     }
+}
 
+impl<T> Receivable for Option<T>
+where
+    T: Receivable,
+{
+    type JsForm = JsValue;
     fn from_js<'cx>(ctx: &mut Cx<'cx>, value: Handle<'cx, JsValue>) -> NeonResult<Self> {
         let value = match value.is_a::<T::JsForm, _>(ctx) {
             true => value.downcast::<T::JsForm, _>(ctx).unwrap(),
             false => return Ok(None),
         };
 
-        Transferable::from_js(ctx, value).map(|v| Some(v))
+        Receivable::from_js(ctx, value).map(|v| Some(v))
     }
 }
 
-pub trait Event: Transferable {
-    fn name(&self) -> &str;
-    fn data<'cx>(&self, ctx: &mut Cx<'cx>) -> NeonResult<Handle<'cx, JsValue>>;
-}
-
-#[derive(Debug)]
-pub struct EventSystem {
-    channel: Channel,
-    listener: Option<Root<JsFunction>>,
-}
-
-pub trait EventSystemTrait {
-    fn set_event_listener(&self, callback: Root<JsFunction>);
-    fn dispatch_event<T: Event + Send + 'static>(&'static self, event: T);
-}
-
-impl EventSystemTrait for Mutex<OnceCell<EventSystem>> {
-    fn set_event_listener(&self, callback: Root<JsFunction>) {
-        let mut lock = self.lock().unwrap();
-        let event_system = lock.get_mut().unwrap();
-        event_system.listener = Some(callback);
-    }
-
-    fn dispatch_event<T: Event + Send + 'static>(&'static self, event: T) {
-        let mut lock = self.lock().unwrap();
-        let event_system = lock.get_mut().unwrap();
-        event_system.channel.send(move |mut ctx| {
-            let mut lock = self.lock().unwrap();
-            let event_system = lock.get_mut().unwrap();
-            let name = event.name();
-
-            let data = event.data(&mut ctx)?;
-
-            let callback = match &event_system.listener {
-                Some(cb) => cb.to_inner(&mut ctx),
-                None => return Ok(()),
-            };
-
-            let mut bind = callback.bind(&mut ctx);
-
-            bind.arg(name)?;
-            bind.arg(data)?;
-
-            bind.exec()?;
-            Ok(())
-        });
-    }
-}
-
-impl EventSystem {
-    pub fn new(channel: Channel) -> Self {
-        EventSystem {
-            channel,
-            listener: None,
-        }
-    }
-}
-pub static EVENT_SYSTEM: Mutex<OnceCell<EventSystem>> = Mutex::new(OnceCell::new());
-
-pub fn console_log<'cx, T: Sendable<'cx>>(ctx: &mut Cx<'cx>, msg: &T) {
+pub fn console_log<'cx, T: Sendable>(ctx: &mut Cx<'cx>, msg: &T) {
     let msg = msg.to_js(ctx);
 
     let Some(mut log) = ctx
