@@ -1,12 +1,7 @@
-use std::io::Write;
-
 use proc_macro::TokenStream;
 use syn::{ItemEnum, ItemStruct, parse_macro_input, parse_str};
 
-use crate::{
-    declare::{declare_item_enum, declare_item_struct},
-    dts_content, dts_file, is_io_allowed,
-};
+use crate::declare::{declare_item_enum, declare_item_struct};
 
 #[inline(always)]
 pub fn sendable_derive_impl(input: TokenStream) -> TokenStream {
@@ -22,13 +17,6 @@ pub fn sendable_derive_impl(input: TokenStream) -> TokenStream {
 fn sendable_derive_enum(item_enum: &ItemEnum) -> TokenStream {
     declare_item_enum(item_enum);
     let ident = &item_enum.ident;
-
-    if is_io_allowed() {
-        let mut file = dts_file();
-        let dts = dts_content();
-        file.write_all(dts.as_bytes()).unwrap();
-    }
-
     let variants: Vec<_> = item_enum.variants.iter().map(|f| f.ident.clone()).collect();
 
     quote::quote! {
@@ -55,13 +43,6 @@ fn sendable_derive_enum(item_enum: &ItemEnum) -> TokenStream {
 fn sendable_derive_struct(item_struct: &ItemStruct) -> TokenStream {
     declare_item_struct(item_struct);
     let ident = &item_struct.ident;
-
-    if is_io_allowed() {
-        let mut file = dts_file();
-        let dts = dts_content();
-        file.write_all(dts.as_bytes()).unwrap();
-    }
-
     let members: Vec<_> = item_struct.fields.iter().map(|f| f.clone()).collect();
     let member_to_js_statements: Vec<syn::Stmt> = members
         .iter()

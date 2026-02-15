@@ -1,8 +1,12 @@
+use std::sync::{OnceLock, RwLock};
+
 pub use bondage_macros::*;
 use neon::prelude::*;
 
 // #[linkme::distributed_slice]
 // pub static JS_EXPORTS: [(&str, fn(FunctionContext) -> JsResult<JsValue>)];
+
+pub static JS_CHANNEL: RwLock<OnceLock<Channel>> = RwLock::new(OnceLock::new());
 
 pub trait Transferable:
     Sendable<JsForm = <Self as Transferable>::JsForm>
@@ -32,6 +36,14 @@ impl<V: Value> Sendable for Handle<'_, V> {
 
     fn to_js<'cx>(&self, cx: &mut Cx<'cx>) -> Handle<'cx, Self::JsForm> {
         self.as_value(cx)
+    }
+}
+
+impl<V: Object> Receivable for Root<V> {
+    type JsForm = V;
+
+    fn from_js<'cx>(cx: &mut Cx<'cx>, value: Handle<'cx, Self::JsForm>) -> NeonResult<Self> {
+        Ok(value.root(cx))
     }
 }
 

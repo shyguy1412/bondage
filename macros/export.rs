@@ -1,8 +1,8 @@
 use proc_macro::{Span, TokenStream};
 use quote::ToTokens;
-use syn::{parse_macro_input, parse_str};
+use syn::{Expr, ExprLit, Lit, Meta, parse_macro_input, parse_str, punctuated::Punctuated};
 
-use crate::declare::declare_item_fn;
+use crate::declare::{declare_item_fn, declare_type};
 
 #[inline(always)]
 pub fn export_impl(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -16,27 +16,10 @@ pub fn export_impl(args: TokenStream, input: TokenStream) -> TokenStream {
     }
 }
 
-pub fn export_item_function(_: TokenStream, item_fn: syn::ItemFn) -> TokenStream {
-    fn capitalize(word: &str) -> String {
-        word.chars()
-            .enumerate()
-            .map(|(i, char)| i.eq(&0).then(|| char.to_ascii_uppercase()).unwrap_or(char))
-            .collect()
-    }
+pub fn export_item_function(args: TokenStream, item_fn: syn::ItemFn) -> TokenStream {
+    let args = parse_macro_input!(args with Punctuated::<Meta, syn::Token![,]>::parse_terminated);
 
-    let ident_str: String = item_fn
-        .sig
-        .ident
-        .to_string()
-        .split("_")
-        .enumerate()
-        .map(|(i, word)| match i {
-            0 => word.to_string(),
-            _ => capitalize(word),
-        })
-        .collect();
-
-    declare_item_fn(&item_fn, &ident_str);
+    let ident_str = declare_item_fn(&item_fn, &args);
 
     let ident = syn::Ident::new(&ident_str, Span::call_site().into());
     let body = item_fn.block;
@@ -73,7 +56,7 @@ pub fn export_item_function(_: TokenStream, item_fn: syn::ItemFn) -> TokenStream
         #(
             let #arg_ident = {
                 let intermediate = ctx.arg()?;
-                #arg_type::from_js(ctx, intermediate)?
+                Receivable::from_js(ctx, intermediate)?
             };
         )*
 
