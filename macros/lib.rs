@@ -29,6 +29,7 @@ pub(crate) fn get_generic<'a>(ty: &'a syn::Type) -> Option<&'a syn::Type> {
 pub fn main(_: TokenStream, input: TokenStream) -> TokenStream {
     let item_fn = parse_macro_input!(input as syn::ItemFn);
     let sig = &item_fn.sig;
+    let vis = &item_fn.vis;
     let fn_ident = &item_fn.sig.ident;
     let FnArg::Typed(PatType { pat, .. }) = item_fn
         .sig
@@ -58,7 +59,9 @@ pub fn main(_: TokenStream, input: TokenStream) -> TokenStream {
     guard.commit();
     quote::quote! {
     #[neon::main]
-    #sig{
+    #vis #sig{
+        neon::registered().export(&mut #arg_ident)?;
+
         #item_fn
         let channel = #arg_ident.channel();
         let _ = JS_CHANNEL.write().map(|cell| cell.set(channel));
@@ -72,9 +75,26 @@ pub fn main(_: TokenStream, input: TokenStream) -> TokenStream {
 pub fn with_context(_: TokenStream, body: TokenStream) -> TokenStream {
     let item_fn = parse_macro_input!(body as syn::ItemFn);
     let ident = &item_fn.sig.ident;
+    let args: Vec<_> = item_fn.sig.inputs.iter().skip(1).collect();
+    let generics = &item_fn.sig.generics;
+    let arg_idents: Vec<_> = item_fn
+        .sig
+        .inputs
+        .iter()
+        .skip(1)
+        .map(|arg| match arg {
+            FnArg::Receiver(_) => panic!("Not an item function"),
+            FnArg::Typed(PatType { pat, .. }) => pat,
+        })
+        .map(|pat| match pat.as_ref() {
+            Pat::Ident(PatIdent { ident, .. }) => ident,
+            _ => panic!("Patterns are not supported when using with_context"),
+        })
+        .collect();
+    let vis = &item_fn.vis;
 
     quote::quote! {
-        fn #ident(event: Event) {
+        #vis fn #ident #generics(#(#args),*) {
             #item_fn
 
             let channel_lock = match bondage::JS_CHANNEL.read() {
@@ -84,7 +104,7 @@ pub fn with_context(_: TokenStream, body: TokenStream) -> TokenStream {
 
             let _ = channel_lock
                 .wait()
-                .send(move |mut ctx| #ident(&mut ctx, event))
+                .send(move |mut ctx| #ident(&mut ctx, #(#arg_idents),*))
                 .join();
         }
     }

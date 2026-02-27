@@ -1,8 +1,8 @@
 use proc_macro::{Span, TokenStream};
 use quote::ToTokens;
-use syn::{Expr, ExprLit, Lit, Meta, parse_macro_input, parse_str, punctuated::Punctuated};
+use syn::{Meta, parse_macro_input, parse_str, punctuated::Punctuated};
 
-use crate::declare::{declare_item_fn, declare_type};
+use crate::declare::declare_item_fn;
 
 #[inline(always)]
 pub fn export_impl(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -45,7 +45,7 @@ pub fn export_item_function(args: TokenStream, item_fn: syn::ItemFn) -> TokenStr
 
     quote::quote! {
     use neon::prelude::*;
-    #[neon::export(name = #ident_str)]
+    #[neon::export]
     fn #ident<'cx>(
         ctx: &mut FunctionContext<'cx>,
     ) -> JsResult<'cx, <#ret as Sendable>::JsForm> {

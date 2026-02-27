@@ -246,7 +246,7 @@ pub fn declare_item_enum(item_enum: &syn::ItemEnum) {
         return;
     }
 
-    let variants: String = item_enum
+    let variants = item_enum
         .variants
         .iter()
         .filter_map(|variant| match &variant.fields {
@@ -259,24 +259,29 @@ pub fn declare_item_enum(item_enum: &syn::ItemEnum) {
         })
         .map(|field| &field.ty)
         .map(|ty| rust_type_to_js(&ty.to_token_stream().to_string()))
-        .fold("".to_string(), |prev, cur| format!("{prev}{cur}|"));
+        .fold("\n".to_string(), |prev, cur| {
+            format!("{prev}    {cur}:{cur},\n")
+        });
 
-    //remove trailing |
-    let variants = variants[0..variants.len() - 1].to_string();
+    let variants = format!("{{{variants}  }}");
 
-    guard.push(DeclType::TypeDecl(ident, variants));
+    guard.push(DeclType::TypeDecl(format!("{ident}Variants"), variants));
+    guard.push(DeclType::TypeDecl(
+        format!("{ident}<T extends keyof {ident}Variants = keyof {ident}Variants>"),
+        format!("{ident}Variants[T]"),
+    ));
     guard.commit()
 }
 
-pub fn declare_type(ident: String, decl: String) {
-    let mut guard = DELCS.write().unwrap();
+// pub fn declare_type(ident: String, decl: String) {
+//     let mut guard = DELCS.write().unwrap();
 
-    if guard.iter().any(|decl| match decl {
-        DeclType::TypeDecl(name, ..) => *name == ident,
-        _ => false,
-    }) {
-        return;
-    }
-    guard.push(DeclType::TypeDecl(ident, decl));
-    guard.commit()
-}
+//     if guard.iter().any(|decl| match decl {
+//         DeclType::TypeDecl(name, ..) => *name == ident,
+//         _ => false,
+//     }) {
+//         return;
+//     }
+//     guard.push(DeclType::TypeDecl(ident, decl));
+//     guard.commit()
+// }

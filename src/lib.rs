@@ -3,6 +3,8 @@ use std::sync::{OnceLock, RwLock};
 pub use bondage_macros::*;
 use neon::prelude::*;
 
+use crate as bondage;
+
 // #[linkme::distributed_slice]
 // pub static JS_EXPORTS: [(&str, fn(FunctionContext) -> JsResult<JsValue>)];
 
@@ -169,7 +171,8 @@ where
     }
 }
 
-pub fn console_log<'cx, T: Sendable>(ctx: &mut Cx<'cx>, msg: &T) {
+#[with_context]
+pub fn console_log<'cx, T: Sendable + Send + 'static>(ctx: &mut Cx<'cx>, msg: T) -> NeonResult<()> {
     let msg = msg.to_js(ctx);
 
     let Some(mut log) = ctx
@@ -177,10 +180,11 @@ pub fn console_log<'cx, T: Sendable>(ctx: &mut Cx<'cx>, msg: &T) {
         .and_then(|console| console.method(ctx, "log"))
         .ok()
     else {
-        return;
+        return Ok(());
     };
 
     let _ = log.arg(msg);
 
     let _ = log.call::<()>();
+    Ok(())
 }
