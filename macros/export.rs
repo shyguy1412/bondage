@@ -21,8 +21,8 @@ pub fn export_item_function(args: TokenStream, item_fn: syn::ItemFn) -> TokenStr
 
     let ident_str = declare_item_fn(&item_fn, &args);
 
-    let ident = syn::Ident::new(&ident_str, Span::call_site().into());
-    let body = item_fn.block;
+    let js_ident = syn::Ident::new(&ident_str, Span::call_site().into());
+    let ident = &item_fn.sig.ident;
 
     let ret: syn::Type = match &item_fn.sig.output {
         syn::ReturnType::Default => parse_str("()").unwrap(),
@@ -32,26 +32,25 @@ pub fn export_item_function(args: TokenStream, item_fn: syn::ItemFn) -> TokenStr
             .unwrap(),
     };
 
-    let (arg_ident, arg_type): (Vec<_>, Vec<_>) = item_fn
+    let arg_ident: Vec<_> = item_fn
         .sig
         .inputs
         .iter()
+        .skip(1)
         .filter_map(|arg| match arg {
             syn::FnArg::Receiver(_) => None,
             syn::FnArg::Typed(pat_type) => Some(pat_type),
         })
-        .map(|ty| (*ty.pat.clone(), *ty.ty.clone()))
+        .map(|ty| *ty.pat.clone())
         .collect();
 
     quote::quote! {
     use neon::prelude::*;
     #[neon::export]
-    fn #ident<'cx>(
+    fn #js_ident<'cx>(
         ctx: &mut FunctionContext<'cx>,
     ) -> JsResult<'cx, <#ret as Sendable>::JsForm> {
-        fn #ident<'cx>(ctx: &mut FunctionContext<'cx>, #(#arg_ident: #arg_type),*) -> NeonResult<#ret> {
-            #body
-        }
+        #item_fn
 
         #(
             let #arg_ident = {

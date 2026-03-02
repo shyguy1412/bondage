@@ -83,7 +83,8 @@ fn rust_type_to_js(rust_type: &str) -> String {
         "JsObject" => "object",
         "Root < JsFunction >" => "(...args:unknown) => unknown",
         _ => {
-            let ty: syn::TypePath = parse_str(rust_type).expect("All types should be paths");
+            let ty: syn::TypePath =
+                parse_str(rust_type).expect(&format!("All types should be paths: {rust_type}"));
 
             let ident = ty.path.segments.first().unwrap().ident.to_string();
 
@@ -216,6 +217,7 @@ pub fn declare_item_fn(item_fn: &syn::ItemFn, args: &Punctuated<Meta, Comma>) ->
         .sig
         .inputs
         .iter()
+        .skip(1) //ctx arg
         .filter_map(|arg| match arg {
             syn::FnArg::Receiver(_) => None,
             syn::FnArg::Typed(pat_type) => Some(pat_type),
