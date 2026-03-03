@@ -4,7 +4,7 @@ mod receivable;
 mod sendable;
 
 use proc_macro::TokenStream;
-use syn::{FnArg, Pat, PatIdent, PatType, parse_macro_input};
+use syn::{FnArg, Pat, PatIdent, PatType, Signature, parse_macro_input};
 
 use declare::{DELCS, DeclType, DeclarationsTrait};
 
@@ -28,25 +28,15 @@ pub(crate) fn get_generic<'a>(ty: &'a syn::Type) -> Option<&'a syn::Type> {
 #[proc_macro_attribute]
 pub fn main(_: TokenStream, input: TokenStream) -> TokenStream {
     let item_fn = parse_macro_input!(input as syn::ItemFn);
-    let sig = &item_fn.sig;
     let vis = &item_fn.vis;
-    let fn_ident = &item_fn.sig.ident;
-    let FnArg::Typed(PatType { pat, .. }) = item_fn
-        .sig
-        .inputs
-        .first()
-        .expect("Main function must take ModuleContext as argument")
-    else {
-        panic!("Main function can not be a method");
-    };
-
-    let Pat::Ident(PatIdent {
-        ident: ref arg_ident,
+    let Signature {
+        asyncness,
+        fn_token,
+        ident: fn_ident,
+        generics,
+        output,
         ..
-    }) = **pat
-    else {
-        panic!("Arg must have an identifer");
-    };
+    } = &item_fn.sig;
 
     let mut guard = DELCS.write().unwrap();
 
@@ -59,13 +49,13 @@ pub fn main(_: TokenStream, input: TokenStream) -> TokenStream {
     guard.commit();
     quote::quote! {
     #[neon::main]
-    #vis #sig{
-        neon::registered().export(&mut #arg_ident)?;
+    #vis #asyncness #fn_token #fn_ident #generics (mut ctx: neon::context::ModuleContext) #output{
+        neon::registered().export(&mut ctx)?;
 
         #item_fn
-        let channel = #arg_ident.channel();
+        let channel = ctx.channel();
         let _ = JS_CHANNEL.write().map(|cell| cell.set(channel));
-        #fn_ident(#arg_ident)
+        #fn_ident(ctx)
     }
     }
     .into()
