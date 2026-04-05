@@ -36,7 +36,7 @@ fn dts_file() -> std::fs::File {
         .write(true)
         .create(true)
         .truncate(true)
-        .open("./src/core/package/core.d.ts")
+        .open(std::env::var("OUTFILE").unwrap_or("./src/core/package/core.d.ts".to_string()))
         .unwrap()
 }
 
